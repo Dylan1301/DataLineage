@@ -16,7 +16,7 @@ class LineageNode:
     
 
 
-def build_column_node(column: exp.
+def build_column_node(column
                       , scope, related_query):
     """
     Build node based on input, if input column object has alias/function wrapped -> sepearated into 2 node 
