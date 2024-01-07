@@ -1,0 +1,22 @@
+function getcolumn -(col? - none - all) node upstream
+list all column/alias -> list[column/alias]
+
+for each:
+    if alias:
+        create node
+        extract column name -> list column
+        for column in list column -> getcolumn
+
+col1 col2 alias1[col3 col4]
+
+target lineage cho col1
+
+-> chaaps nhan viec neu no co reference thi mooi build lineage
+
+-> func1: list all columns
+func2: list lineage for each column
+
+
+func - list all column 
+
+func2 - list lineage for each column 
