@@ -11,8 +11,8 @@ class LineageNode:
     scope: Scope = None
     related_query: exp.Expression
     downstream: t.List[t.LineageNode] = None
-    downstream_related: t.List[t.LineageNode] = None
-    upstream_related: t.LineageNode = None
+    downstream_related: t.List[t.LineageNode] = None # For query node related to the current query node
+    upstream_related: t.LineageNode = None # For query node related to the current query node
     
 
 
@@ -34,14 +34,14 @@ def build_column_node(column
         node = LineageNode(name, type = 'alias', scope=scope, related_query=related_query, downstream=[])
         for col in column.find_all(exp.Column):
             node_col = build_column_node(col)
+            node_col.upstream_related.append(node)
             node.downstream.append(node_col)
 
     return node
 
 
+def nodelize(scope, name = None, upstream_related=None):
 
-
-def nodelize(scope, queue=[], name = None, upstream_related=None):
     if not name:
         name = 'temp'
     
@@ -49,35 +49,35 @@ def nodelize(scope, queue=[], name = None, upstream_related=None):
     
     select_scope = sql.expression.selects
     for column in select_scope:
-        thisnode.downstream.append(build_column_node(column=column, scope=scope, related_query=scope.expression))
+        column_node = build_column_node(column=column, scope=scope, related_query=scope.expression)
+        thisnode.downstream.append(column_node)
 
+    return thisnode
 
-    if queue: 
-        return upstream_related
+def build_lineage(scope, current_processing = None, queue = [], node_queue = []):
+    
+    current_node = nodelize(scope, current_processing)
+
+    queue.append((key, source, current_node) for key, source in scope.sources.items())
+
+    while not node_queue:
+        current_processing = current_node
+        while not queue:
+            item = queue.pop()
+
+            if isinstance(item[1], exp.Table):
+                child_node= LineageNode(name, type='table', scope=None, related_query=item[1], downstream=[], downstream_related=[], upstream_related=current_node)
+            elif isinstance(item[1], Scope):
+                child_node = nodelize(item[1], item[0], upstream_related=current_node)
+            
+            node_queue.append(child_node)
+
+            current_node.downstream.append(child_node)
+        
     
 
 
-    # chưa xử lí th alias
-
-
-
-
-
-
-def list_alias(sql, sources, upstream= None):
-    """
-    break down all alias and column name of a single column in a sql statement
-    """
-    select_scope = sql.expression.selects
-    aliases = [x for x in select_scope if x.alias]
-    direct_columns = [x for x in select_scope if not x.alias]
     
-
-    # Create alias node to connect with other components
-    for alias in aliases:
-        alias_node = LineageNode(alias.name, source_table= sources, related_query=None, related_node=[], downstream=[])
-        upstream.downstream.append(alias_node)
-
 
 def find_column(column: exp.Column, scope: Scope, source= None, related_query = None, sources_table = None, upstream = None):
     """
