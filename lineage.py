@@ -27,11 +27,11 @@ def build_column_node(column
     """
     if column.alias == '' and len(column.find_all(exp.Column)) == 1:
         # no alias found
-        node = LineageNode(column.alias_or_name, type = '', scope=scope, related_query=related_query, downstream=[])
+        node = LineageNode(column.alias_or_name, type = 'column', scope=scope, related_query=column, downstream=[])
     
     else:
         name = 'function' if column.alias == '' else column.alias
-        node = LineageNode(name, type = 'alias', scope=scope, related_query=related_query, downstream=[])
+        node = LineageNode(name, type = 'alias', scope=scope, related_query=column, downstream=[])
         for col in column.find_all(exp.Column):
             node_col = build_column_node(col)
             node_col.upstream_related.append(node)
@@ -62,7 +62,8 @@ def build_lineage(scope, current_processing = None, queue = [], node_queue = [])
 
     while not node_queue:
         current_processing = current_node
-        while not queue:
+
+        while not queue and queue[2] == current_processing:
             item = queue.pop()
 
             if isinstance(item[1], exp.Table):
@@ -72,8 +73,12 @@ def build_lineage(scope, current_processing = None, queue = [], node_queue = [])
             
             node_queue.append(child_node)
 
-            current_node.downstream.append(child_node)
+            current_processing.downstream.append(child_node)
         
+        
+def match_column(node: LineageNode):
+    pass
+    
     
 
 
