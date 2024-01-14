@@ -1,7 +1,8 @@
-from sqlglot import parse_one, exp
-from sqlglot.optimizer.scope import *
+from sqlglot import parse_one, exp, maybe_parse
+from sqlglot.optimizer import Scope, build_scope, find_all_in_scope, qualify
 from dataclasses import dataclass
 import typing as t
+from sqlglot.errors import SqlglotError
 
 
 @dataclass
@@ -9,10 +10,10 @@ class LineageNode:
     name:str
     type: str
     scope: Scope = None
-    related_query: exp.Expression
-    downstream: t.List[t.LineageNode] = None
-    downstream_related: t.List[t.LineageNode] = None # For query node related to the current query node
-    upstream_related: t.LineageNode = None # For query node related to the current query node
+    related_query: exp.Expression = None
+    downstream=  []
+    downstream_related= [] # For query node related to the current query node
+    upstream_related= [] # For query node related to the current query node
     
 
 
@@ -25,15 +26,15 @@ def build_column_node(column
     output: LineageNode object of the column
     
     """
-    if column.alias == '' and len(column.find_all(exp.Column)) == 1:
+    if column.alias == '' and len(list(column.find_all(exp.Column))) == 1:
         # no alias found
-        node = LineageNode(column.alias_or_name, type = 'column', scope=scope, related_query=column, downstream=[])
+        node = LineageNode(column.alias_or_name, type = 'column', scope=scope, related_query=column)
     
     else:
         name = 'function' if column.alias == '' else column.alias
-        node = LineageNode(name, type = 'alias', scope=scope, related_query=column, downstream=[])
+        node = LineageNode(name, type = 'alias', scope=scope, related_query=column)
         for col in column.find_all(exp.Column):
-            node_col = build_column_node(col)
+            node_col = build_column_node(col, scope=scope, related_query=col)
             node_col.upstream_related.append(node)
             node.downstream.append(node_col)
 
@@ -45,66 +46,77 @@ def nodelize(scope, name = None, upstream_related=None):
     if not name:
         name = 'temp'
     
-    thisnode = LineageNode(name, type='query', scope=scope, related_query=scope.expression, downstream=[], downstream_related=[], upstream_related=upstream_related)
-    
-    select_scope = sql.expression.selects
+    thisnode = LineageNode(name, type='query', scope=scope, related_query=scope.expression)
+    if not upstream_related:
+        thisnode.upstream_related.append(upstream_related)
+    select_scope = scope.expression.selects
     for column in select_scope:
         column_node = build_column_node(column=column, scope=scope, related_query=scope.expression)
         thisnode.downstream.append(column_node)
 
     return thisnode
 
-def build_lineage(scope, current_processing = None, queue = [], node_queue = []):
+def build_lineage(scope, queue = []):
     
-    current_node = nodelize(scope, current_processing)
+    rootnode = nodelize(scope, 'Root_Query')
 
-    queue.append((key, source, current_node) for key, source in scope.sources.items())
+    current_node=rootnode
+    while len(queue) > 0:
 
-    while not node_queue:
-        current_processing = current_node
+        if scope.union_scopes:
+            for union in scope.union_scopes:
+                node = nodelize(union, name='union', upstream_related=rootnode)    
+                current_node.downstream_related.append(node)
+                queue.append(node)
 
-        while not queue and queue[2] == current_processing:
-            item = queue.pop()
+        # For subquery, ctes and tables
+        for key, source in scope.sources.items():
+            if isinstance(source, exp.Table):
+                node=LineageNode(key, type='table', scope=None, related_query=source)
+                node.upstream_related.append(current_node)
+            elif isinstance(source, Scope):
+                node=nodelize(source, name=key, upstream_related=current_node)
+                queue.append(node)
+            current_node.downstream_related.append(node)
 
-            if isinstance(item[1], exp.Table):
-                child_node= LineageNode(name, type='table', scope=None, related_query=item[1], downstream=[], downstream_related=[], upstream_related=current_node)
-            elif isinstance(item[1], Scope):
-                child_node = nodelize(item[1], item[0], upstream_related=current_node)
-            
-            node_queue.append(child_node)
+        match_column(current_node)
 
-            current_processing.downstream.append(child_node)
+        current_node=queue.pop(0)
+        
+
+    return rootnode
         
         
 def match_column(node: LineageNode):
-    pass
-    
-    
+    def match(node, column):
 
+        if column.type == 'column':
+            for find_column in node.downstream:
+                if find_column.name == column.name:
+                    column.downstream_related.append(find_column)
+                    find_column.upstream_related.append(column)
+                    return True
 
-    
-
-def find_column(column: exp.Column, scope: Scope, source= None, related_query = None, sources_table = None, upstream = None):
-    """
-    
-    """
-
-    
-    if not sources_table:
-        sources_table = scope.sources
-
-    if column.table:
-        source_table= {column.table: sources_table[column.table]}
-    else:
-        source_table = {k:v for k, v in sources_table.items if [x for x in v.expression.selects if x.alias_or_name == column]}
-
-    node = LineageNode(name=column.name, source_table=source_table)
-
+        elif column.type == 'alias' or column.type == 'function':
+            for col in column.downstream:
+                match(node, col)
 
     
-    node = LineageNode(column.name, source_table=source_table, related_query=sql, downstream=[], type = 'column')
+    for col in node.downstream:
+        match(node, col)
     
 
 
-        
+def get_lineage(sql, dialect = None):
+    expression = maybe_parse(sql,  dialect=dialect)
+    qualified = qualify.qualify(expression, dialect=dialect)
 
+    scope = build_scope(qualified)
+
+    if not scope:
+        raise SqlglotError("Cannot build lineage, sql must be SELECT")
+    
+    
+    lineage = build_lineage(scope)
+
+    return lineage
