@@ -1,21 +1,22 @@
 from sqlglot import parse_one, exp, maybe_parse
 from sqlglot.optimizer import Scope, build_scope, find_all_in_scope, qualify
-from dataclasses import dataclass
-import typing as t
+from dataclasses import dataclass, field
+from typing import List, Optional
 from sqlglot.errors import SqlglotError
 
 
-@dataclass
+@dataclass(frozen=True)
 class LineageNode:
     name:str
     type: str
     scope: Scope = None
     related_query: exp.Expression = None
-    downstream=  []
-    downstream_related= [] # For query node related to the current query node
-    upstream_related= [] # For query node related to the current query node
-    
+    downstream:  list = field(default_factory=list)
+    downstream_related: list = field(default_factory=list) # For query node related to the current query node
+    upstream_related: list = field(default_factory=list) # For query node related to the current query node
 
+    def __str__(self) -> str:
+        return '['+ self.name + ']'
 
 def build_column_node(column
                       , scope, related_query):
@@ -28,13 +29,13 @@ def build_column_node(column
     """
     if column.alias == '' and len(list(column.find_all(exp.Column))) == 1:
         # no alias found
-        node = LineageNode(column.alias_or_name, type = 'column', scope=scope, related_query=column)
+        node = LineageNode(column.alias_or_name, type = 'column', scope=None, related_query=column)
     
     else:
         name = 'function' if column.alias == '' else column.alias
-        node = LineageNode(name, type = 'alias', scope=scope, related_query=column)
+        node = LineageNode(name, type = 'alias', scope=None, related_query=column)
         for col in column.find_all(exp.Column):
-            node_col = build_column_node(col, scope=scope, related_query=col)
+            node_col = build_column_node(col, scope=None, related_query=col)
             node_col.upstream_related.append(node)
             node.downstream.append(node_col)
 
@@ -42,35 +43,39 @@ def build_column_node(column
 
 
 def nodelize(scope, name = None, upstream_related=None):
-
     if not name:
         name = 'temp'
     
     thisnode = LineageNode(name, type='query', scope=scope, related_query=scope.expression)
+    
     if not upstream_related:
         thisnode.upstream_related.append(upstream_related)
     select_scope = scope.expression.selects
     for column in select_scope:
         column_node = build_column_node(column=column, scope=scope, related_query=scope.expression)
         thisnode.downstream.append(column_node)
-
     return thisnode
 
 def build_lineage(scope, queue = []):
     
     rootnode = nodelize(scope, 'Root_Query')
+    queue.append(rootnode)
 
-    current_node=rootnode
     while len(queue) > 0:
+        current_node=queue.pop(0)
+        node_scope=current_node.scope
 
-        if scope.union_scopes:
-            for union in scope.union_scopes:
+        if not node_scope:
+            continue
+
+        if node_scope.union_scopes:
+            for union in node_scope.union_scopes:
                 node = nodelize(union, name='union', upstream_related=rootnode)    
                 current_node.downstream_related.append(node)
                 queue.append(node)
 
         # For subquery, ctes and tables
-        for key, source in scope.sources.items():
+        for key, source in node_scope.sources.items():
             if isinstance(source, exp.Table):
                 node=LineageNode(key, type='table', scope=None, related_query=source)
                 node.upstream_related.append(current_node)
@@ -81,8 +86,6 @@ def build_lineage(scope, queue = []):
 
         match_column(current_node)
 
-        current_node=queue.pop(0)
-        
 
     return rootnode
         
