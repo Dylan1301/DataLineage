@@ -1,26 +1,25 @@
-# from lineage import *
-# from pprint import pprint
-# sql = """
+from lineage import *
+from pprint import pprint
+sql = """
                               
 
 
-# select cola, colb from table
-# Union
-# select col1, col2 from table2
+select cola, colb from table
+Union
+select col1, col2 from table2
 
 
-# """
+"""
 
 
-# # print(repr(get_lineage(sql)))
-# rootnode = get_lineage(sql)
-# pprint(rootnode.downstream[0].downstream[0])
+# print(repr(get_lineage(sql)))
+rootnode = get_lineage(sql, file_name='test1')
+pprint(rootnode)
 
 
 # print(rootnode.downstream[0])
 
 
-bo_is_a_bitch=True
-if bo_is_a_bitch:
-    print("clap your hands")
+
+
 
