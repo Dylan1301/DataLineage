@@ -36,9 +36,7 @@ driver.verify_authentication()
 
 with driver.session() as session:
     
-    session.execute_write(db_create_node,node=rootnode)
-    for node in rootnode.downstream:
-        session.execute_write(db_create_node, node=node)
-    session.execute_write(db_match_query_column,node=rootnode)
+    session.execute_write(db_list_node,node=rootnode)
+   
 
 

@@ -8,6 +8,7 @@ sqlglot = "*"
 
 [dev-packages]
 sqlglot = "*"
+ipykernel = "*"
 
 [requires]
 python_version = "3.8"
