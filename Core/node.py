@@ -9,8 +9,11 @@ from itertools import count
 @dataclass
 class Node:
     id: int = field(default_factory=count().__next__)
+    name: str|None
     scope: Scope|None = None
     relate_query_string: str|None = None
+    downstream: list[Self] = field(default_factory=list)
+    upstream: list[Self] = field(default_factory=list)
     downstream_related: list[Self] = field(default_factory=list)
     upstream_related: list[Self] = field(default_factory=list)
     file_name: str|None = None
@@ -61,4 +64,8 @@ class Where(Node):
 
 @dataclass
 class Other(Node):
+    pass
+
+@dataclass
+class Function(Node):
     pass
